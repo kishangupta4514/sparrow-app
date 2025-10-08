@@ -115,7 +115,11 @@
   import { PlanUpgradeModal } from "@sparrow/common/components";
   import { planInfoByRole } from "@sparrow/common/utils";
   import { TeamRole } from "@sparrow/common/enums";
-  import { planContentDisable, TimeISOExtractor } from "@sparrow/common/utils";
+  import {
+    planContentDisable,
+    TimeISOExtractor,
+    FormatDays,
+  } from "@sparrow/common/utils";
 
   // Declaring props for the component
   export let tab: Observable<Partial<Tab>>;
@@ -128,6 +132,9 @@
   export let toggleHistoryDetails;
   export let toggleHistoryContainer;
   export let environmentVariables;
+  console.log("environmentVariables", environmentVariables);
+  export let environments;
+  console.log("environments in testflow", environments);
   export let isTestflowEditable;
   export let onRedrectRequest;
   export let onUpdateTestFlowName;
@@ -203,6 +210,7 @@
   const extractTimeFromISOString = new TimeISOExtractor()
     .extractTimeFromISOString;
 
+  const formatDaysInstance = new FormatDays();
   const osDetector = new OSDetector();
   let userOS = osDetector.getOS();
   let limitNodesChange = 0;
@@ -346,6 +354,8 @@
         lastResult = "Success";
       } else if (lastRun.status === "fail") {
         lastResult = "Fail";
+      } else if (lastRun.status === "pending") {
+        lastResult = "Pending";
       } else {
         lastResult = lastRun.status || "Unknown";
       }
@@ -362,34 +372,27 @@
       } else if (config.runCycle === "daily" && config.time) {
         description = `Run everyday at ${extractTimeFromISOString(config.time)}`;
       } else if (config.runCycle === "weekly" && config.days && config.time) {
-        const dayNames = config.days
-          .map((dayNumber) => {
-            const dayObject = weekDays.find(
-              (day) => day.dayNumber === dayNumber,
-            );
-            return dayObject ? dayObject.label : dayNumber.toString();
-          })
-          .join(", ");
-        description = `Run every ${dayNames} at ${extractTimeFromISOString(config.time)}`;
+        const dayNames = formatDaysInstance.formatDays(config.days);
         description = `Run every ${dayNames} at ${extractTimeFromISOString(config.time)}`;
       }
     }
 
     let environment = "None";
+    let isDeletedEnvironment = false;
+
     if (schedule.environmentId && schedule.environmentId.trim() !== "") {
-      // environmentVariables is an object with keys like "global", "local", etc.
-      // Each has an id and name property
-      let envObj = undefined;
-      for (const key in environmentVariables) {
-        if (
-          environmentVariables[key] &&
-          environmentVariables[key].id === schedule.environmentId
-        ) {
-          envObj = environmentVariables[key];
-          break;
-        }
+      // Find environment by ID in the environments array
+      const envObj = Array.isArray(environments)
+        ? environments.find((env) => env.id === schedule.environmentId)
+        : null;
+
+      if (envObj) {
+        environment = envObj.name;
+      } else {
+        // Environment not found in current list → deleted
+        environment = schedule?.environmentName || "Deleted Environment";
+        isDeletedEnvironment = true;
       }
-      environment = envObj?.name || "Deleted Environment";
     }
 
     return {
@@ -402,6 +405,7 @@
       lastResult: lastResult,
       isActive: schedule.isActive,
       originalData: schedule,
+      isDeletedEnvironment: isDeletedEnvironment,
     };
   }
 
@@ -725,6 +729,7 @@
     }
   };
   const handleSaveConfirm = () => {
+    handleEventClickTestflowSaveSchedule();
     onSaveTestflow(); // Your original save function
     isSaveModalOpen = false;
   };
@@ -1890,7 +1895,6 @@
                   startIcon={PlayFilled}
                   title={"Run Now"}
                   onClick={async () => {
-                    handleEventClickScheduleRun();
                     if (
                       $tab?.property?.testflow?.state?.testflowNavigator ===
                       TestflowNavigatorEnum.SCHEDULE
@@ -1928,6 +1932,7 @@
                   disable={isGuestUser}
                   buttonType="button"
                   onClick={() => {
+                    handleEventClickScheduleRun();
                     isScheduleRunPopupOpen = true;
                   }}
                 />
@@ -1941,6 +1946,7 @@
                 id="create-new-schedule"
                 buttonType="button"
                 onClick={() => {
+                  handleEventClickScheduleRun();
                   isScheduleRunPopupOpen = true;
                 }}
               />
