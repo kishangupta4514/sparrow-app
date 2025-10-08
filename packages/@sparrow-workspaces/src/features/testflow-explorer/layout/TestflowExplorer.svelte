@@ -285,15 +285,6 @@
   let hasActiveSchedules = true; // This should come from your data
   let searchQuery = "";
   let filteredSchedules = [];
-  const weekDays = [
-    { label: "Mon", value: "monday", dayNumber: 1 },
-    { label: "Tue", value: "tuesday", dayNumber: 2 },
-    { label: "Wed", value: "wednesday", dayNumber: 3 },
-    { label: "Thu", value: "thursday", dayNumber: 4 },
-    { label: "Fri", value: "friday", dayNumber: 5 },
-    { label: "Sat", value: "saturday", dayNumber: 6 },
-    { label: "Sun", value: "sunday", dayNumber: 0 },
-  ];
 
   function mapScheduleData(schedule) {
     // Determine status based on isActive and executeAt
