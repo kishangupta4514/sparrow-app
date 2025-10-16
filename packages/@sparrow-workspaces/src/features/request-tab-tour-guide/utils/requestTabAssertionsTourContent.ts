@@ -1,4 +1,4 @@
-export const RequestTabTestsScriptTourContent = [
+export const RequestTabAssertionsTourContent = [
   {
     Title: "Write Your Post scripts here!",
     description:
