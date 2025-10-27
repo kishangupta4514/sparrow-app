@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Toggle, Tooltip } from "@sparrow/library/ui";
+  import { Button, Modal, Spinner, Toggle, Tooltip } from "@sparrow/library/ui";
   import type { Observable } from "rxjs";
   import type { Tab } from "@sparrow/common/types/workspace/tab";
 
@@ -40,6 +40,12 @@
   export let onUpdateSchedule = (updatedSchedule) => {};
   export let onSaveSchedule;
   export let userRole;
+  export let onValidateTestflowRun;
+
+  let scheduleRunValidateData: {
+    hasLocalhostUrls?: boolean;
+    hasFormdataFiles?: boolean;
+  };
 
   const extractTimeFromISOString = new TimeISOExtractor()
     .extractTimeFromISOString;
@@ -76,6 +82,39 @@
       }
     }
   }
+
+  let isScheduleExpired = false;
+  $: {
+    if (schedule?.runConfiguration?.runCycle === "once") {
+      const pastCron = schedule?.cronExpression;
+      if (pastCron) {
+        const parts = pastCron.trim().split(/\s+/);
+
+        let second = parseInt(parts[0], 10);
+        let minute = parseInt(parts[1], 10);
+        let hour = parseInt(parts[2], 10);
+        let day = parseInt(parts[3], 10);
+        let month = parseInt(parts[4], 10) - 1;
+
+        // Start from the past time
+        let now = new Date();
+        let next = new Date(
+          Date.UTC(now.getUTCFullYear(), month, day, hour, minute, second, 0),
+        );
+
+        // If the past time is in the past, keep adding interval until it's in the future
+        if (next <= now) {
+          isScheduleExpired = true;
+        } else {
+          isScheduleExpired = false;
+        }
+      } else {
+        isScheduleExpired = true;
+      }
+    }
+  }
+
+  let isRunScheduleModalOpen = false;
 </script>
 
 {#if $tab.tabId}
@@ -93,15 +132,32 @@
         </p>
         <div class="d-flex gap-2">
           {#if isTestflowScheduleEditable}
-            <div class="d-flex align-items-center gap-2">
-              <Toggle
-                isActive={schedule?.isActive || false}
-                label="Active"
-                fontWeight="500"
-                onChange={() => {
-                  onEditTestflowSchedule(!schedule?.isActive);
-                }}
-              />
+            <div
+              class="d-flex align-items-center gap-2"
+              style={isScheduleExpired
+                ? "pointer-events: none; opacity: 0.7;"
+                : ""}
+            >
+              {#if $loadingState.get("schedule-status-" + schedule?.id)}
+                <Spinner size={"14px"} />
+              {:else}
+                <Toggle
+                  isActive={isScheduleExpired
+                    ? false
+                    : schedule?.isActive || false}
+                  label={isScheduleExpired
+                    ? "expired"
+                    : schedule?.isActive
+                      ? "Active"
+                      : "Inactive"}
+                  fontWeight="500"
+                  onChange={async () => {
+                    startLoading("schedule-status-" + schedule?.id);
+                    await onEditTestflowSchedule(!schedule?.isActive);
+                    stopLoading("schedule-status-" + schedule?.id);
+                  }}
+                />
+              {/if}
             </div>
             <Button
               title={"Run Now"}
@@ -110,7 +166,15 @@
               disable={$loadingState.get("schedule-run-" + schedule?.id)}
               onClick={async () => {
                 startLoading("schedule-run-" + schedule?.id);
-                await onScheduleRun();
+                scheduleRunValidateData = await onValidateTestflowRun();
+                if (
+                  scheduleRunValidateData?.hasLocalhostUrls ||
+                  scheduleRunValidateData?.hasFormdataFiles
+                ) {
+                  isRunScheduleModalOpen = true;
+                } else {
+                  await onScheduleRun();
+                }
                 stopLoading("schedule-run-" + schedule?.id);
               }}
             />
@@ -129,16 +193,20 @@
           />
         </div>
       </div>
-      <div class="d-flex pb-2">
-        <Button
-          title={testflow?.name}
-          startIcon={FlowChartRegular}
-          type={"link-secondary"}
-          size={"extra-small"}
-          onClick={() => {
-            onOpenTestflow(testflow?._id);
-          }}
-        />
+      <div class="d-flex pb-3">
+        {#if testflow?.name}
+          <Button
+            title={testflow?.name?.length > 30
+              ? testflow?.name?.slice(0, 30) + "..."
+              : testflow?.name || ""}
+            startIcon={FlowChartRegular}
+            type={"link-secondary"}
+            size={"extra-small"}
+            onClick={() => {
+              onOpenTestflow(testflow?._id);
+            }}
+          />
+        {/if}
         {#if scheduledEnvironment?.name}
           <div class="d-flex gap-2 align-items-center">
             <span
@@ -146,7 +214,9 @@
               style="transform: translateX(12px) translateY(2px);"
             ></span>
             <Button
-              title={scheduledEnvironment?.name || ""}
+              title={scheduledEnvironment?.name?.length > 30
+                ? scheduledEnvironment?.name?.slice(0, 30) + "..."
+                : scheduledEnvironment?.name || ""}
               startIcon={LayerRegular}
               type={"link-secondary"}
               size={"extra-small"}
@@ -163,7 +233,7 @@
               class="text-fs-12 mb-0"
               style="color: var(--text-ds-neutral-200)"
             >
-              {description || ""}
+              {isScheduleExpired ? "Expired" : description || ""}
             </p>
           </div>
         {/if}
@@ -198,6 +268,80 @@
     </div>
   </div>
 {/if}
+
+<Modal
+  title={"Run Schedule"}
+  zIndex={1000}
+  isOpen={isRunScheduleModalOpen}
+  width={"35%"}
+  handleModalState={() => {
+    isRunScheduleModalOpen = false;
+  }}
+>
+  <div class="mt-2 mb-4">
+    {#if scheduleRunValidateData?.hasLocalhostUrls && scheduleRunValidateData?.hasFormdataFiles}
+      <p
+        class="text-ds-font-size-14 text-ds-line-height-143 text-ds-font-weight-medium mb-3"
+        style="color: var(--text-ds-neutral-100);"
+      >
+        The schedule <b>“{schedule?.name || ""}”</b> contains APIs that may not execute
+        on the cloud. It includes local-only endpoints and form-data file uploads,
+        which cannot be accessed during scheduled execution.
+      </p>
+    {:else if scheduleRunValidateData?.hasFormdataFiles}
+      <p
+        class="text-ds-font-size-14 text-ds-line-height-143 text-ds-font-weight-medium mb-3"
+        style="color: var(--text-ds-neutral-100);"
+      >
+        The schedule <b>“{schedule?.name || ""}”</b> includes form-data file uploads
+        that can’t be executed on the cloud. Please remove or replace them before
+        proceeding.
+      </p>
+    {:else if scheduleRunValidateData?.hasLocalhostUrls}
+      <p
+        class="text-ds-font-size-14 text-ds-line-height-143 text-ds-font-weight-medium mb-3"
+        style="color: var(--text-ds-neutral-100);"
+      >
+        The schedule <b>“{schedule?.name || ""}”</b> contains local APIs that will
+        not execute on the cloud. To ensure all tests run successfully, deploy the
+        APIs before running.
+      </p>
+    {:else}
+      <p
+        class="text-ds-font-size-14 text-ds-line-height-143 text-ds-font-weight-medium mb-3"
+        style="color: var(--text-ds-neutral-100);"
+      >
+        Something went wrong while validating the testflow before running the
+        schedule.
+      </p>
+    {/if}
+  </div>
+  <div class="d-flex justify-content-end gap-2">
+    <Button
+      title={"Cancel"}
+      textClassProp={"fs-6"}
+      size={"medium"}
+      customWidth={"95px"}
+      type={"secondary"}
+      onClick={() => {
+        isRunScheduleModalOpen = false;
+      }}
+    ></Button>
+    <Button
+      title={"Run Anyway"}
+      size={"medium"}
+      textClassProp={"fs-6"}
+      type={"primary"}
+      customWidth={"155px"}
+      onClick={async () => {
+        isRunScheduleModalOpen = false;
+        startLoading("schedule-run-" + schedule?.id);
+        await onScheduleRun();
+        stopLoading("schedule-run-" + schedule?.id);
+      }}
+    ></Button>
+  </div>
+</Modal>
 
 <style>
   .dot {
