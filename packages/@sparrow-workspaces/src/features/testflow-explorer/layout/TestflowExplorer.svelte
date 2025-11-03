@@ -170,7 +170,7 @@
   export let planLimitRunHistoryCount: number = 5;
   export let planLimitTestScheduleCount: number = 5;
   export let planLimitTestFlowBlocks: number = 5;
-  export let planLimitTestFlows: number = 3;
+  export let planLimitTestflow: number = 3;
   export let testflowCount: number = 1;
   export let teamDetails: any;
   export let testflowBlocksPlanModalOpen: boolean = false;
@@ -1240,6 +1240,34 @@
 
     if (_requestData) {
       // create a new node object using existing request (meta and core data)
+      // First, ensure that the referenced request is of an allowed type (only REST API requests).
+      try {
+        const reqMetaCollectionId = _requestData?.collectionId;
+        const reqMetaRequestId = _requestData?.requestId;
+        const reqMetaFolderId = _requestData?.folderId;
+        if (reqMetaCollectionId && reqMetaRequestId) {
+          const reqData = await onSelectRequest(
+            reqMetaCollectionId,
+            reqMetaRequestId,
+            reqMetaFolderId,
+          );
+          debugger;
+          const reqType = reqData?.type;
+          // If type exists and is not REQUEST, block node creation
+          if (reqType && reqType !== "REQUEST") {
+            notifications.error(
+              "Only REST API requests can be added to Test Flows.",
+            );
+            return; // Abort creating this node
+          }
+        }
+      } catch (err) {
+        // In case of any failure determining the type, fail safe and block to avoid inconsistent nodes.
+        notifications.error(
+          "Unable to validate request type. This item cannot be added to the Test Flow.",
+        );
+        return;
+      }
       requestCoreData = await createCustomRequestObject(
         _requestData?.collectionId,
         _requestData?.requestId,
@@ -2088,52 +2116,57 @@
             {/if}
           {/if}
           {#if userRole !== WorkspaceRole.WORKSPACE_VIEWER}
-            <Dropdown
-              zIndex={600}
-              buttonId="test-run-button"
-              isBackgroundClickable={true}
-              bind:isMenuOpen={runButtonMenu}
-              horizontalPosition={"left"}
-              minWidth={165}
-              options={[
-                {
-                  name: "Schedule Run",
-                  icon: AddRegular,
-                  iconColor: "var(--icon-secondary-130)",
-                  iconSize: "13px",
-                  onclick: () => {
-                    if (isGuestUser) {
-                      notifications.error(
-                        "To access the feature, you need to login/signup on Sparrow.",
-                      );
-                    } else {
-                      handleEventClickScheduleRun();
-                      isScheduleRunPopupOpen = true;
-                    }
-                  },
-                },
-              ]}
+            <div
+              id="create-new-schedule"
+              style="display:none;"
+              on:click={() => {
+                if (isGuestUser) {
+                  notifications.error(
+                    "To access the feature, you need to login/signup on Sparrow.",
+                  );
+                } else {
+                  handleEventClickScheduleRun();
+                  isScheduleRunPopupOpen = true;
+                }
+              }}
             >
-              <!-- <Tooltip
+              <Dropdown
+                zIndex={600}
+                buttonId="test-run-button"
+                isBackgroundClickable={true}
+                bind:isMenuOpen={runButtonMenu}
+                horizontalPosition={"left"}
+                minWidth={165}
+                options={[
+                  {
+                    name: "Schedule Run",
+                    icon: AddRegular,
+                    iconColor: "var(--icon-secondary-130)",
+                    iconSize: "13px",
+                  },
+                ]}
+              >
+                <!-- <Tooltip
                 title={"Add Options"}
                 placement={"bottom-center"}
                 distance={12}
                 show={!runButtonMenu}
                 zIndex={10}
               > -->
-              <Button
-                type="primary"
-                id="test-run-button"
-                size={"medium"}
-                startIcon={runButtonMenu
-                  ? ChevronUpRegular
-                  : ChevronDownRegular}
-                onClick={() => {
-                  runButtonMenu = !runButtonMenu;
-                }}
-              />
-              <!-- </Tooltip> -->
-            </Dropdown>
+                <Button
+                  type="primary"
+                  id="test-run-button"
+                  size={"medium"}
+                  startIcon={runButtonMenu
+                    ? ChevronUpRegular
+                    : ChevronDownRegular}
+                  onClick={() => {
+                    runButtonMenu = !runButtonMenu;
+                  }}
+                />
+                <!-- </Tooltip> -->
+              </Dropdown>
+            </div>
           {/if}
         </div>
 
@@ -2512,7 +2545,7 @@
   <!-- Help Section -->
   {#if $tab?.property?.testflow?.state?.testflowNavigator === TestflowNavigatorEnum.TESTFLOW}
     <div class="p-3" style="position:absolute; z-index:3; bottom:0; right:0;">
-      {#if testflowCount <= planLimitTestFlows || isGuestUser}
+      {#if testflowCount <= planLimitTestflow || isGuestUser}
         <p
           class="mb-0 pb-0 text-fs-14"
           style="color: var(--text-primary-300); font-weight:500; cursor:pointer;"
@@ -2758,7 +2791,7 @@
       </div>
 
       <p class="text-ds-font-size-12" style="color:var(--text-ds-neutral-100)">
-        Your Hub is now on the {teamPlanName} edition, which has a limit of {planLimitTestFlows}
+        Your Hub is now on the {teamPlanName} edition, which has a limit of {planLimitTestflow}
         active Test Flows per workspace.
       </p>
       <ul class="text-ds-font-size-12" style="color:var(--text-ds-neutral-100)">
