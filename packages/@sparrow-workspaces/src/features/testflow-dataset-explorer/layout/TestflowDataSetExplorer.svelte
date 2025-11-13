@@ -58,7 +58,9 @@
   let itemsPerPage = 10;
 
   // Get column headers dynamically from first object
-  $: columns = datasets.length > 0 ? Object.keys(datasets[0]) : [];
+  $: columns = Array.isArray(datasets)
+    ? Array.from(new Set(datasets.flatMap((obj) => Object.keys(obj))))
+    : [];
 
   // Paginated data
   $: paginatedData = datasets.slice(
@@ -79,10 +81,10 @@
     originalName = $tab?.name;
   }
 
-  $: isSaveDisabled = $tab?.isSaved;
+  $: isSaveDisabled = (testDataName ?? "").trim().length === 0 || $tab?.isSaved;
 
-  function handleTestDataHeadingChange(_name) {
-    onUpdateName(_name);
+  function handleTestDataHeadingChange(_name, event) {
+    onUpdateName(_name, event);
   }
 
   async function handleSave() {
@@ -120,31 +122,7 @@
   };
 
   function handleRowClick(row: any, rowIndex: number) {
-    console.log("Row clicked:", row);
-    console.log("Row index:", startItem + rowIndex);
     // Handle row click - navigate or open details
-  }
-
-  function goToFirstPage() {
-    currentPage = 1;
-  }
-
-  function goToPreviousPage() {
-    if (currentPage > 1) currentPage--;
-  }
-
-  function goToNextPage() {
-    if (currentPage < totalPages) currentPage++;
-  }
-
-  function goToLastPage() {
-    currentPage = totalPages;
-  }
-
-  function changeItemsPerPage(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    itemsPerPage = parseInt(select.value);
-    currentPage = 1; // Reset to first page
   }
 
   // Format value for display
@@ -159,14 +137,6 @@
   function truncateText(text: string, maxLength: number = 50): string {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + "...";
-  }
-
-  // Capitalize column header
-  function formatColumnHeader(column: string): string {
-    return column
-      .split(/(?=[A-Z])|_|-/) // Split on camelCase, underscore, or hyphen
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(" ");
   }
 </script>
 
@@ -187,8 +157,8 @@
         variant="inline"
         placeholder="Enter dataset name"
         disabled={isWorkspaceViewer}
-        on:input={() => handleTestDataHeadingChange(testDataName)}
-        on:blur={() => handleTestDataHeadingChange(testDataName)}
+        on:input={() => handleTestDataHeadingChange(testDataName, "")}
+        on:blur={() => handleTestDataHeadingChange(testDataName, "blur")}
       />
 
       <div class="d-flex gap-2">
@@ -261,7 +231,7 @@
               </th>
               {#each columns as column}
                 <th class="column-header">
-                  {formatColumnHeader(column)}
+                  {column}
                 </th>
               {/each}
             </tr>

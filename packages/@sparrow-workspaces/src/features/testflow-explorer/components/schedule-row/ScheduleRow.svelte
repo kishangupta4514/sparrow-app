@@ -25,8 +25,72 @@
   export let handleToggleStatus;
   export let getNextRunTooltip;
   export let getTagType;
+  export let onOpenDataset;
+
+  function parseRunTime(time: string | number): number {
+    if (!time) return 0;
+    if (typeof time === "number") return time;
+    const val = parseFloat(time);
+    if (isNaN(val)) return 0;
+    if (time.toLowerCase().includes("ms")) {
+      return val;
+    } else if (time.toLowerCase().includes("s")) {
+      return val * 1000;
+    } else {
+      return val;
+    }
+  }
+
+  function aggregateDataRunHistory(dataSetEntry) {
+    const runs = dataSetEntry.schedularDataRunHistory || [];
+    const totals = runs.reduce(
+      (acc, run) => {
+        acc.successRequests += Number(run.successRequests) || 0;
+        acc.failedRequests += Number(run.failedRequests) || 0;
+        acc.totalTimeMs += parseRunTime(run.totalTime);
+        return acc;
+      },
+      { successRequests: 0, failedRequests: 0, totalTimeMs: 0 },
+    );
+
+    return {
+      successRequests: totals.successRequests,
+      failedRequests: totals.failedRequests,
+      totalTime: `${(totals.totalTimeMs / 1000).toFixed(2)} sec`,
+    };
+  }
 
   function getFailTooltip(schedule) {
+    // Check for dataset run history first
+    if (
+      schedule.originalData?.schedularDataSetHistory &&
+      schedule.originalData.schedularDataSetHistory.length > 0
+    ) {
+      // Get the LATEST dataset history (most recent one)
+      const sortedDatasetHistory = [
+        ...schedule.originalData.schedularDataSetHistory,
+      ].sort(
+        (a, b) =>
+          new Date(b.createdAt || b.updatedAt) -
+          new Date(a.createdAt || a.updatedAt),
+      );
+
+      const latestDatasetHistory = sortedDatasetHistory[0];
+
+      if (
+        latestDatasetHistory.schedularDataRunHistory &&
+        latestDatasetHistory.schedularDataRunHistory.length > 0
+      ) {
+        // Use the same aggregation logic as TestResults.svelte
+        const aggregatedData = aggregateDataRunHistory(latestDatasetHistory);
+        const totalRequests =
+          aggregatedData.successRequests + aggregatedData.failedRequests;
+
+        return `• ${aggregatedData.successRequests}/${totalRequests} APIs passed.<br>• Avg. Response Time: ${aggregatedData.totalTime}`;
+      }
+    }
+
+    // Fallback to regular run history
     const runHistory = schedule.originalData?.schedularRunHistory;
     if (Array.isArray(runHistory) && runHistory.length > 0) {
       // Sort to get the latest run
@@ -284,9 +348,22 @@
         ><WarningIconNew />
       </Tooltip>
     {:else if schedule.testflowDataSetName && schedule.testflowDataSetName.toLowerCase() !== "none"}
-      <span class="text-fs-12" style="color: var(--text-ds-neutral-50);">
-        {schedule.testflowDataSetName}
-      </span>
+      <div class="environment-link">
+        <Button
+          title={schedule?.testflowDataSetName?.length > 30
+            ? schedule?.testflowDataSetName?.slice(0, 30) + "..."
+            : schedule?.testflowDataSetName || ""}
+          type="link-primary"
+          size="extra-small"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (onOpenDataset) {
+              onOpenDataset(schedule?.testflowDataSet);
+            }
+          }}
+        />
+      </div>
     {:else}
       <span class="text-fs-12" style="color: var(--text-ds-neutral-300);">
         None

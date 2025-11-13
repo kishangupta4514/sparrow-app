@@ -57,6 +57,7 @@
     ExpandIcon,
     DocumentRegular,
     ArrowExpandRegular,
+    ArrowSortRegular,
   } from "@sparrow/library/icons";
 
   import "@xyflow/svelte/dist/style.css";
@@ -143,6 +144,11 @@
   import { isTeamDowngradePopupDismissed } from "../store";
   import TestDataRow from "../components/test-data-row/TestDataRow.svelte";
   import Papa from "papaparse";
+  import {
+    handleTestDataDownloadDesktop,
+    handleTestDataDownloadWeb,
+  } from "../../testflow-dataset-explorer/utils";
+  import { importTestDateTemplate } from "../utils";
 
   // Declaring props for the component
   export let tab: Observable<Partial<Tab>>;
@@ -298,6 +304,7 @@
   // List to store collection documents and filtered collections
   let filteredCollections = writable<CollectionDto[]>([]);
   let runButtonMenu = false;
+  let importTemplateMenu = false;
   let importDropdownOpen = false;
   let importFileInput: HTMLInputElement | null = null;
   let importedFileContent: string | null = null;
@@ -318,6 +325,7 @@
   } | null = null;
   let datasetContent;
   let activeMenuId: string | null = null;
+  let sortOrder: "asc" | "desc" | null = "desc";
 
   // Writable stores for nodes and edges
   const nodes = writable<Node[]>([]);
@@ -492,29 +500,59 @@
     }
 
     let lastResult = "No results yet";
-    const runHistory =
-      schedule.schedularRunHistory ||
-      schedule.originalData?.schedularRunHistory;
 
-    if (Array.isArray(runHistory) && runHistory.length > 0) {
-      // Sort by createdAt to get the most recent run (if array is not already sorted)
-      const sortedHistory = [...runHistory].sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
-      );
-      const lastRun = sortedHistory[0];
-
-      if (lastRun.status === "pass") {
-        lastResult = "Success";
-      } else if (lastRun.status === "fail") {
-        if (lastRun.successRequests > 0) {
-          lastResult = "Partial Fail";
+    // Check for dataset run history first
+    if (
+      schedule.schedularDataSetHistory &&
+      schedule.schedularDataSetHistory.length > 0
+    ) {
+      // Get the most recent dataset run (assuming sorted by createdAt descending)
+      const datasetHistory =
+        schedule.schedularDataSetHistory[0].schedularDataRunHistory;
+      if (Array.isArray(datasetHistory) && datasetHistory.length > 0) {
+        const sortedDatasetRuns = [...datasetHistory].sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+        );
+        const lastDatasetRun = sortedDatasetRuns[0];
+        if (lastDatasetRun.status === "pass") {
+          lastResult = "Success";
+        } else if (lastDatasetRun.status === "fail") {
+          if (lastDatasetRun.successRequests > 0) {
+            lastResult = "Partial Fail";
+          } else {
+            lastResult = "Fail";
+          }
+        } else if (lastDatasetRun.status === "pending") {
+          lastResult = "Pending";
         } else {
-          lastResult = "Fail";
+          lastResult = lastDatasetRun.status || "Unknown";
         }
-      } else if (lastRun.status === "pending") {
-        lastResult = "Pending";
-      } else {
-        lastResult = lastRun.status || "Unknown";
+      }
+    } else {
+      // Fallback to regular run history
+      const runHistory =
+        schedule.schedularRunHistory ||
+        schedule.originalData?.schedularRunHistory;
+
+      if (Array.isArray(runHistory) && runHistory.length > 0) {
+        const sortedHistory = [...runHistory].sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+        );
+        const lastRun = sortedHistory[0];
+
+        if (lastRun.status === "pass") {
+          lastResult = "Success";
+        } else if (lastRun.status === "fail") {
+          if (lastRun.successRequests > 0) {
+            lastResult = "Partial Fail";
+          } else {
+            lastResult = "Fail";
+          }
+        } else if (lastRun.status === "pending") {
+          lastResult = "Pending";
+        } else {
+          lastResult = lastRun.status || "Unknown";
+        }
       }
     }
 
@@ -539,6 +577,7 @@
     let environmentData = null;
     let testflowDataSetName = "None";
     let isDeletedTestData = false;
+    let testflowDataSet = null;
 
     if (
       schedule.testflowDataSetId &&
@@ -551,6 +590,7 @@
       if (dataset) {
         testflowDataSetName = dataset.name;
         isDeletedTestData = false;
+        testflowDataSet = dataset;
       } else {
         // Dataset not found in current list → might be deleted
         testflowDataSetName =
@@ -589,6 +629,7 @@
       isDeletedEnvironment: isDeletedEnvironment,
       testflowDataSetName: testflowDataSetName,
       isDeletedTestData: isDeletedTestData,
+      testflowDataSet: testflowDataSet,
     };
   }
 
@@ -1626,7 +1667,6 @@
         return edges;
       });
       dfs(graph, Number(_id));
-      // debugger;
     }
   };
 
@@ -2158,11 +2198,41 @@
     currentPage * itemsPerPage,
   );
 
+  $: sortedTestData = (() => {
+    const data = [...filteredTestData];
+    data.sort((a, b) => {
+      const dateA = new Date(a.originalData?.updatedAt || 0).getTime();
+      const dateB = new Date(b.originalData?.updatedAt || 0).getTime();
+
+      if (sortOrder === "desc") {
+        return dateA - dateB;
+      } else {
+        return dateB - dateA;
+      }
+    });
+
+    return data;
+  })();
+
+  $: sortIconColor =
+    sortOrder === "asc"
+      ? "var(--primary-color, #6366f1)"
+      : "var(--text-ds-neutral-50)";
+  $: sortIconRotation = sortOrder === "asc" ? "rotate(180deg)" : "rotate(0deg)";
+
   // Get paginated test data
-  $: paginatedTestData = filteredTestData.slice(
+  $: paginatedTestData = sortedTestData.slice(
     (currentTestDataPage - 1) * testDataItemsPerPage,
     currentTestDataPage * testDataItemsPerPage,
   );
+
+  function toggleSort() {
+    if (sortOrder === "desc") {
+      sortOrder = "asc";
+    } else if (sortOrder === "asc") {
+      sortOrder = "desc";
+    }
+  }
 
   const handlePageChange = (newPage: number) => {
     currentPage = newPage;
@@ -2287,12 +2357,43 @@
     }
   }
 
+  const handleExportSampleJSONTemplate = () => {
+    if (isWebApp) {
+      const sampleData = importTestDateTemplate;
+      handleTestDataDownloadWeb(sampleData, "JSON", "sample-template.json");
+    } else {
+      const sampleData = importTestDateTemplate;
+      handleTestDataDownloadDesktop(sampleData, "JSON", "sample-template.json");
+    }
+  };
+
+  const handleExportSampleCSVTemplate = () => {
+    if (isWebApp) {
+      const sampleData = importTestDateTemplate;
+      handleTestDataDownloadWeb(sampleData, "CSV", "sample-template.csv");
+    } else {
+      const sampleData = importTestDateTemplate;
+      handleTestDataDownloadDesktop(sampleData, "CSV", "sample-template.csv");
+    }
+  };
+
   // Updated handleImportFileChange function - shows table from response
   const handleImportFileChange = async (event: Event) => {
     const input = event.target as HTMLInputElement;
     const file = input?.files?.[0];
     if (!file) return;
     const fileExtension = file.name.match(/\.(json|csv)$/i)?.[1]?.toLowerCase();
+    // Validate file size - must not exceed 500KB
+    const MAX_FILE_SIZE_KB = 500;
+    const fileSizeKB = file.size / 1024;
+
+    if (fileSizeKB > MAX_FILE_SIZE_KB) {
+      notifications.error(
+        `File size exceeds the maximum limit of ${MAX_FILE_SIZE_KB}KB.`,
+      );
+      input.value = "";
+      return;
+    }
     if (!fileExtension) {
       notifications.error(
         "Failed to import. Please select a valid JSON or CSV file.",
@@ -2368,9 +2469,9 @@
         };
         isDuplicateModalOpen = true;
         resetImportState();
-      } else {
+      } else if (response?.data?.message) {
         resetImportState();
-        notifications.error("Failed to import Data. Please try again.");
+        notifications.error(response?.data?.message);
       }
     } catch (err) {
       resetImportState();
@@ -2592,7 +2693,16 @@
                       TestflowNavigatorEnum.SCHEDULE
                     ) {
                       // Handle scheduled run logic
-                      await onClickScheduledRun();
+                      notifications.warning(
+                        "Please navigate to Testflow to execute the run",
+                      );
+                    } else if (
+                      $tab?.property?.testflow?.state?.testflowNavigator ===
+                      TestflowNavigatorEnum.TESTDATA
+                    ) {
+                      notifications.warning(
+                        "Please navigate to Testflow to execute the run",
+                      );
                     } else {
                       unselectNodes();
                       await onClickRun();
@@ -2651,12 +2761,21 @@
                 on:change={handleImportFileChange}
                 style="display:none"
               />
-              {#if !(userRole === WorkspaceRole.WORKSPACE_VIEWER) && !isGuestUser}
+              {#if !(userRole === WorkspaceRole.WORKSPACE_VIEWER) || isGuestUser}
                 <Tooltip
-                  title={"Only JSON or CSV files are supported"}
-                  placement={"top-center"}
+                  title={!isGuestUser
+                    ? "Import Data"
+                    : "Create an account or sign in to access import feature"}
+                  subtext={!isGuestUser
+                    ? `Accepted formats: JSON, CSV (max 500 kb).
+                  Ensure your file contains valid key–value pairs. 
+                  The key refers to the variable declared in test flow nodes {{key}}.
+                  Use Export Template for format reference.`
+                    : ""}
+                  placement={!isGuestUser ? "bottom-left" : "bottom-center"}
                   distance={12}
                   show={!runButtonMenu}
+                  size="medium"
                   zIndex={10}
                 >
                   <Button
@@ -2665,10 +2784,47 @@
                     startIcon={ArrowUploadFilled}
                     title={"Import Data"}
                     onClick={handleImportClick}
+                    disable={isGuestUser}
                   />
                 </Tooltip>
               {/if}
             </div>
+            <Dropdown
+              zIndex={600}
+              buttonId="export-template-button"
+              isBackgroundClickable={true}
+              bind:isMenuOpen={importTemplateMenu}
+              horizontalPosition={"left"}
+              minWidth={185}
+              options={[
+                {
+                  name: "Export JSON Template",
+                  icon: ArrowDownloadRegular,
+                  iconColor: "var(--icon-secondary-130)",
+                  iconSize: "13px",
+                  onclick: handleExportSampleJSONTemplate,
+                },
+                {
+                  name: "Export CSV Template",
+                  icon: ArrowDownloadRegular,
+                  iconColor: "var(--icon-secondary-130)",
+                  iconSize: "13px",
+                  onclick: handleExportSampleCSVTemplate,
+                },
+              ]}
+            >
+              <Button
+                type="secondary"
+                id="export-template-button"
+                size={"medium"}
+                startIcon={importTemplateMenu
+                  ? ChevronUpRegular
+                  : ChevronDownRegular}
+                onClick={() => {
+                  importTemplateMenu = !importTemplateMenu;
+                }}
+              />
+            </Dropdown>
           {/if}
         </div>
 
@@ -2929,6 +3085,7 @@
                     {onOpenTestflowScheduleConfigurationsTab}
                     {onOpenTestflowScheduleTab}
                     {onOpenEnvironment}
+                    onOpenDataset={openTestflowDataSetTab}
                   />
                 {/each}
               </tbody>
@@ -2979,7 +3136,8 @@
               type={"secondary"}
               size={"small"}
               loader={$loadingState?.get("testdata-refresh-" + $tab?.id)}
-              disable={$loadingState?.get("testdata-refresh-" + $tab?.id)}
+              disable={$loadingState?.get("testdata-refresh-" + $tab?.id) ||
+                isGuestUser}
               onClick={async () => {
                 startLoading("testdata-refresh-" + $tab?.id);
                 await onFetchTestflowDataSets();
@@ -2998,7 +3156,22 @@
                   <th>Test Data Name</th>
                   <th>Type</th>
                   <th>Size</th>
-                  <th>Last Updated</th>
+                  <th>
+                    <div
+                      class="d-flex align-items-center gap-2 sort-header"
+                      on:click={toggleSort}
+                      role="button"
+                      tabindex="1"
+                      on:keydown={(e) => e.key === "Enter" && toggleSort()}
+                    >
+                      Last Updated
+                      <div
+                        style="transform: {sortIconRotation}; transition: transform 0.2s ease;"
+                      >
+                        <ArrowSortRegular size="15px" color={sortIconColor} />
+                      </div>
+                    </div>
+                  </th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -3538,8 +3711,9 @@
         {#if importedFileContent}
           {@const parsed = JSON.parse(importedFileContent)}
           {@const data = parsed.dataSet || parsed}
-          {@const columns =
-            Array.isArray(data) && data.length > 0 ? Object.keys(data[0]) : []}
+          {@const columns = Array.isArray(data)
+            ? Array.from(new Set(data.flatMap((obj) => Object.keys(obj))))
+            : []}
           <div class="file-preview-csv">
             <div class="table-container">
               <table class="data-table">
@@ -3571,7 +3745,7 @@
             </div>
           </div>
           <div class="pagination-footer">
-            {#if data?.length > 0}
+            {#if data?.length > 10}
               <Pagination
                 currentPage={currentTestDataPreviewPage}
                 itemsPerPage={testDataPreviewItemsPerPage}
