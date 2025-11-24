@@ -760,6 +760,7 @@
       file: [],
     };
     response.auth = tempTab?.auth;
+    response.tests = tempTab?.tests;
     response.state = tempTab?.state;
     return response;
   };
@@ -883,6 +884,11 @@
       response.method = data?.request?.method;
     } else {
       response.method = tempTab?.method;
+    }
+    if (data?.request?.tests) {
+      response.tests = data?.request?.tests;
+    } else {
+      response.tests = tempTab?.tests;
     }
     // Use the provided requestName parameter first, then fallback to data.name, then "Untitled"
     if (requestName) {
