@@ -136,10 +136,14 @@
     const errors = {
       name:
         !test.name || test.name.trim() === ""
-          ? "This field cannot be empty"
+          ? "This field cannot be empty. Please enter test name"
           : "",
-      testTarget: !test.testTarget ? "This field cannot be empty" : "",
-      condition: !test.condition ? "This field cannot be empty" : "",
+      testTarget: !test.testTarget
+        ? "This field cannot be empty. Please select test target"
+        : "",
+      condition: !test.condition
+        ? "This field cannot be empty. Please select condition"
+        : "",
       testPath: "",
       expectedResult: "",
     };
@@ -151,7 +155,17 @@
       test.testTarget === TestCaseSelectionTypeEnum.RESPONSE_HEADER
     ) {
       if (!test.testPath || test.testPath.trim() === "") {
-        errors.testPath = "This field cannot be empty";
+        let pathType = "path";
+        if (test.testTarget === TestCaseSelectionTypeEnum.RESPONSE_JSON) {
+          pathType = "JSON path";
+        } else if (test.testTarget === TestCaseSelectionTypeEnum.RESPONSE_XML) {
+          pathType = "XML path";
+        } else if (
+          test.testTarget === TestCaseSelectionTypeEnum.RESPONSE_HEADER
+        ) {
+          pathType = "header key";
+        }
+        errors.testPath = `This field cannot be empty. Please enter ${pathType}`;
       }
     }
 
@@ -164,7 +178,8 @@
         !test.expectedResult ||
         test.expectedResult.toString().trim() === ""
       ) {
-        errors.expectedResult = "This field cannot be empty";
+        errors.expectedResult =
+          "This field cannot be empty. Please enter comparison value";
       }
     }
 
@@ -245,6 +260,8 @@
       id: `${test.id}-copy-${Date.now()}`,
       name: `${baseName} ${nextNumber}`,
       isActive: false,
+      hasUnsavedChanges: false,
+      _originalState: undefined,
     };
     localTest.noCode = [...localTest.noCode, newTest];
     selectTest(newTest);
@@ -764,6 +781,14 @@
                                 )}
                               </span>
                             </div>
+                          {:else}
+                            <div
+                              class="text-fs-10 mt-1"
+                              style="color: var(--text-ds-danger-300)"
+                            >
+                              Invalid path syntax. Please check your path
+                              format.
+                            </div>
                           {/if}
                         {:else if test.testPath && test?.testTarget === TestCaseSelectionTypeEnum.RESPONSE_XML}
                           {#if !isValidXPath(test.testPath)}
@@ -807,6 +832,14 @@
                                 Path valid. Sample value: {test.testPath}
                                 = {getXPathValue(test.testPath, responseBody)}
                               </span>
+                            </div>
+                          {:else}
+                            <div
+                              class="text-fs-10 mt-1"
+                              style="color: var(--text-ds-danger-300)"
+                            >
+                              Invalid path syntax. Please check your path
+                              format.
                             </div>
                           {/if}
                         {:else if test.testPath && test?.testTarget === TestCaseSelectionTypeEnum.RESPONSE_HEADER}
@@ -854,6 +887,14 @@
                                   responseHeader,
                                 )}
                               </span>
+                            </div>
+                          {:else}
+                            <div
+                              class="text-fs-10 mt-1"
+                              style="color: var(--text-ds-danger-300)"
+                            >
+                              Invalid path syntax. Please check your path
+                              format.
                             </div>
                           {/if}
                         {/if}
